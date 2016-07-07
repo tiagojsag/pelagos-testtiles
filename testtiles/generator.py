@@ -39,6 +39,7 @@ def datetime2timestamp(d):
 
 def quadtree2google(key):
     """Converts a microsoft quadtree key into the standard google tile coordinates"""
+    key = str(key)
     zoom = len(key)
 
     x = 0
@@ -52,7 +53,7 @@ def quadtree2google(key):
         if c == "2" or c == "3":
             y += 1
 
-    return ",".join(map(str, [x, y, zoom]))
+    return ",".join(map(str, [zoom, x, y]))
 
 def ensure_dir(path):
     """Ensures a directory exists, creating it if it doesn't"""
@@ -71,7 +72,7 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     as well and the range is used in the tile name."""
     # The tile bounds are microsoft's quadtree gridcodes. We transform them to
     # google tile coordinates and use that as the base filename.
-    filename = quadtree2google(str(tile_bounds or point_bounds));
+    filename = quadtree2google(tile_bounds or point_bounds)
 
     # If temporal tiling is enabled, we need to include the time range in the
     # filename. Otherwise we compute a default time range to distribute points
@@ -90,26 +91,30 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
-        data.append({
-                "seriesgroup": series_generator.current_series_group(),
+        # We need to invert the latitude coordinates as the bounding boxes are
+        # inverted in the vectortile library: tile with gridcode 00,
+        # corresponding to 2,0,0 has bounding coordinates with latitudes -90 to
+        # -45, in the southern hemisphere
+        item = {"seriesgroup": series_generator.current_series_group(),
                 "series": series_generator.new_series(),
                 "longitude": bbox.lonmin,
-                "latitude": idx * (bbox.latmax - bbox.latmin) / float(points) + bbox.latmin,
+                "latitude": -(idx * (bbox.latmax - bbox.latmin) / float(points) + bbox.latmin),
                 "datetime": time_range[0] + idx * time_len / float(points),
                 "weight": 20.0,
                 "sog":20,
                 "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
-                "sigma": 0.0})
-        data.append({
-                "seriesgroup": series_generator.current_series_group(),
-                "series": series_generator.new_series(),
-                "longitude": idx * (bbox.lonmax - bbox.lonmin) / float(points) + bbox.lonmin,
-                "latitude": bbox.latmin,
-                "datetime": time_range[0] + idx * time_len / float(points),
-                "weight": 20.0,
-                "sog":20,
-                "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
-                "sigma": 0.0})
+                "sigma": 0.0}
+        data.append(item)
+        item ={"seriesgroup": series_generator.current_series_group(),
+               "series": series_generator.new_series(),
+               "longitude": idx * (bbox.lonmax - bbox.lonmin) / float(points) + bbox.lonmin,
+               "latitude": -bbox.latmin,
+               "datetime": time_range[0] + idx * time_len / float(points),
+               "weight": 20.0,
+               "sog":20,
+               "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
+               "sigma": 0.0}
+        data.append(item)
 
     # Serialize the data using the vectortile binary format
     with open(os.path.join(outdir, filename), "w") as f:
@@ -247,8 +252,6 @@ def main(ctx, outdir, levels, count, temporal_start, temporal_extent, temporal_e
     print("  Temporal start: %s" % temporal_start)
     print("  Temporal extent: %s" % temporal_extent)
     print("  Temporal extent count: %s" % temporal_extent_count)
-    print("")
-    print("")
     print("")
     generate_tileset(outdir, levels, temporal_start, temporal_extent, temporal_extent_count, count)
 
