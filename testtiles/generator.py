@@ -88,7 +88,7 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     print("  Generating points for tile %s at %s/ located inside quadtree %s (TMS %s): %s,%s to %s,%s" % (filename, outdir, bounds_quadtree_key, bounds_tms_coordinates, latmin, lonmin, latmax, lonmax))
 
     # We build all the vessel points in the tile by making an L-shaped line
-    #in the lower-left corner of the tile.
+    # in the lower-left corner of the tile.
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
@@ -104,7 +104,6 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
                 "sog":20,
                 "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
                 "sigma": 0.0}
-
         data.append(item)
 
     # Serialize the data using the vectortile binary format
