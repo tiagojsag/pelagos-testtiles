@@ -91,14 +91,21 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
+        lat1 = min(max(-(idx * (bbox.latmax - bbox.latmin) / float(points) + bbox.latmin), -85), 85)
+        lat2 = min(max(-bbox.latmin, -85), 85)
+        long1 = bbox.lonmin
+        long2 = idx * (bbox.lonmax - bbox.lonmin) / float(points) + bbox.lonmin
+        # print( "Creating point on %s %s" % (lat1, long1))
+        # print( "Creating point on %s %s" % (lat2, long2))
+
         # We need to invert the latitude coordinates as the bounding boxes are
         # inverted in the vectortile library: tile with gridcode 00,
         # corresponding to 2,0,0 has bounding coordinates with latitudes -90 to
         # -45, in the southern hemisphere
         item = {"seriesgroup": series_generator.current_series_group(),
                 "series": series_generator.new_series(),
-                "longitude": bbox.lonmin,
-                "latitude": -(idx * (bbox.latmax - bbox.latmin) / float(points) + bbox.latmin),
+                "longitude": long1,
+                "latitude": lat1,
                 "datetime": time_range[0] + idx * time_len / float(points),
                 "weight": 20.0,
                 "sog":20,
@@ -107,8 +114,8 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
         data.append(item)
         item ={"seriesgroup": series_generator.current_series_group(),
                "series": series_generator.new_series(),
-               "longitude": idx * (bbox.lonmax - bbox.lonmin) / float(points) + bbox.lonmin,
-               "latitude": -bbox.latmin,
+               "longitude": long2,
+               "latitude": lat2,
                "datetime": time_range[0] + idx * time_len / float(points),
                "weight": 20.0,
                "sog":20,
