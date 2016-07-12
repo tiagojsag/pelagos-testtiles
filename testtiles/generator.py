@@ -1,9 +1,11 @@
 import sys
+import math
 import os.path
 import click
 import vectortile
 import json
 import datetime
+import projections
 
 DATE_FORMAT="%Y-%m-%dT%H:%M:%S"
 DEFAULT_EXTENT=1000. * 60. * 60. * 24. * 30
@@ -37,24 +39,6 @@ def datetime2timestamp(d):
     since the epoch"""
     return (d - EPOCH).total_seconds()
 
-def quadtree2google(key):
-    """Converts a microsoft quadtree key into the standard google tile coordinates"""
-    key = str(key)
-    zoom = len(key)
-
-    x = 0
-    for c in key:
-        x *= 2
-        if c == "1" or c == "3":
-            x += 1
-    y = 0
-    for c in key:
-        y *= 2
-        if c == "2" or c == "3":
-            y += 1
-
-    return ",".join(map(str, [zoom, x, y]))
-
 def ensure_dir(path):
     """Ensures a directory exists, creating it if it doesn't"""
     if not os.path.exists(path):
@@ -70,9 +54,16 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     bounds. The name of the tile is generated from the boundaries defined in
     the given `tile_bounds`. If a `time_range` is given, the tile is temporal
     as well and the range is used in the tile name."""
-    # The tile bounds are microsoft's quadtree gridcodes. We transform them to
-    # google tile coordinates and use that as the base filename.
-    filename = quadtree2google(tile_bounds or point_bounds)
+    # The tiles from the vectortile library are microsoft's quatree gridcodes.
+    # We transform them to TMS tile coordinates for processing with the
+    # gdal2tile library, and then to google map tiles for serialization.
+    projector = projections.GlobalMercator()
+    tile_quadtree_key = str(tile_bounds or point_bounds)
+    tile_tms_coordinates = projector.InverseQuadTree(tile_quadtree_key)
+    tile_google_coordinates = projector.GoogleTile(*tile_tms_coordinates)
+
+    # The filename is generated from the google coordinates
+    filename = ",".join(map(str, tile_google_coordinates))
 
     # If temporal tiling is enabled, we need to include the time range in the
     # filename. Otherwise we compute a default time range to distribute points
@@ -86,41 +77,34 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
         time_range = [datetime2timestamp(x) * 1000 for x in time_range]
     time_len = time_range[1] - time_range[0]
 
+    # To generate the points in the tile, we need to generate the latlon
+    # boundaries for the point bounds. For that, we need to translate the
+    # boundaries from microsoft's quadtree gridcodes to tms, and then we can
+    # calculate the latlon boundaries for the tile.
+    bounds_quadtree_key = str(point_bounds)
+    bounds_tms_coordinates = projector.InverseQuadTree(bounds_quadtree_key)
+    latmin,lonmin,latmax,lonmax = projector.TileLatLonBounds(*bounds_tms_coordinates)
+
+    print("  Generating points for tile %s at %s/ located inside quadtree %s (TMS %s): %s,%s to %s,%s" % (filename, outdir, bounds_quadtree_key, bounds_tms_coordinates, latmin, lonmin, latmax, lonmax))
+
     # We build all the vessel points in the tile by making an L-shaped line
     #in the lower-left corner of the tile.
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
-        lat1 = min(max(-(idx * (bbox.latmax - bbox.latmin) / float(points) + bbox.latmin), -85), 85)
-        lat2 = min(max(-bbox.latmin, -85), 85)
-        long1 = bbox.lonmin
-        long2 = idx * (bbox.lonmax - bbox.lonmin) / float(points) + bbox.lonmin
-        # print( "Creating point on %s %s" % (lat1, long1))
-        # print( "Creating point on %s %s" % (lat2, long2))
+        lat = idx * (latmax - latmin) / float(points) + latmin
+        lon = idx * (lonmax - lonmin) / float(points) + lonmin
 
-        # We need to invert the latitude coordinates as the bounding boxes are
-        # inverted in the vectortile library: tile with gridcode 00,
-        # corresponding to 2,0,0 has bounding coordinates with latitudes -90 to
-        # -45, in the southern hemisphere
         item = {"seriesgroup": series_generator.current_series_group(),
                 "series": series_generator.new_series(),
-                "longitude": long1,
-                "latitude": lat1,
+                "latitude": lat,
+                "longitude": lon,
                 "datetime": time_range[0] + idx * time_len / float(points),
                 "weight": 20.0,
                 "sog":20,
                 "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
                 "sigma": 0.0}
-        data.append(item)
-        item ={"seriesgroup": series_generator.current_series_group(),
-               "series": series_generator.new_series(),
-               "longitude": long2,
-               "latitude": lat2,
-               "datetime": time_range[0] + idx * time_len / float(points),
-               "weight": 20.0,
-               "sog":20,
-               "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
-               "sigma": 0.0}
+
         data.append(item)
 
     # Serialize the data using the vectortile binary format
