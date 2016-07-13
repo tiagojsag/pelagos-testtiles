@@ -86,15 +86,19 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     bounds_tms_coordinates = projector.InverseQuadTree(bounds_quadtree_key)
     latmin,lonmin,latmax,lonmax = projector.TileLatLonBounds(*bounds_tms_coordinates)
 
-    print("  Generating points for tile %s at %s/ located inside quadtree %s (TMS %s): %s,%s to %s,%s" % (filename, outdir, bounds_quadtree_key, bounds_tms_coordinates, latmin, lonmin, latmax, lonmax))
+    # print("  Generating points for tile %s at %s/ located inside quadtree %s (TMS %s): %s,%s to %s,%s" % (filename, outdir, bounds_quadtree_key, bounds_tms_coordinates, latmin, lonmin, latmax, lonmax))
 
     # We build all the vessel points in the tile by making an L-shaped line
     # in the lower-left corner of the tile.
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
-        lat = -random.uniform(max(bbox.latmin, -85), min(bbox.latmax, 85))
-        long = random.uniform(bbox.lonmin, bbox.lonmax)
+        # lat = idx * (latmax - latmin) / float(points) + latmin
+        # lon = idx * (lonmax - lonmin) / float(points) + lonmin
+
+
+        lat = random.uniform(max(latmin, -85), min(latmax, 85))
+        long = random.uniform(lonmin, lonmax)
         series = series_generator.new_series()
         series_group = series_generator.current_series_group()
         datetime = random.randint(1420070400000, 1451606400000-1)
