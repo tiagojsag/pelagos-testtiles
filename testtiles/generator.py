@@ -6,6 +6,7 @@ import vectortile
 import json
 import datetime
 import projections
+import random
 
 DATE_FORMAT="%Y-%m-%dT%H:%M:%S"
 DEFAULT_EXTENT=1000. * 60. * 60. * 24. * 30
@@ -25,7 +26,7 @@ class SeriesGenerator:
 
     def new_series(self):
          self.series += 1
-         return self.series
+         return int(round(self.series/10))
 
     def new_series_group(self):
         self.series_group += 1
@@ -92,14 +93,24 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     bbox = point_bounds.get_bbox()
     data = []
     for idx in xrange(0, points):
-        lat = idx * (latmax - latmin) / float(points) + latmin
-        lon = idx * (lonmax - lonmin) / float(points) + lonmin
+        lat = -random.uniform(max(bbox.latmin, -85), min(bbox.latmax, 85))
+        long = random.uniform(bbox.lonmin, bbox.lonmax)
+        series = series_generator.new_series()
+        series_group = series_generator.current_series_group()
+        datetime = random.randint(1420070400000, 1451606400000-1)
+        # print( "Creating point on %s %s" % (lat, long))
+        # print("Series %s" % series)
+        # print("Series group %s" % series_group)
 
-        item = {"seriesgroup": series_generator.current_series_group(),
-                "series": series_generator.new_series(),
+        # We need to invert the latitude coordinates as the bounding boxes are
+        # inverted in the vectortile library: tile with gridcode 00,
+        # corresponding to 2,0,0 has bounding coordinates with latitudes -90 to
+        # -45, in the southern hemisphere
+        item = {"seriesgroup": series_group,
+                "series": series,
+                "longitude": long,
                 "latitude": lat,
-                "longitude": lon,
-                "datetime": time_range[0] + idx * time_len / float(points),
+                "datetime": datetime,
                 "weight": 20.0,
                 "sog":20,
                 "cog": 360.0 * round(8 * idx / float(points)) / 8.0,
@@ -109,6 +120,9 @@ def generate_tile(outdir, series_generator, point_bounds, tile_bounds = None, ti
     # Serialize the data using the vectortile binary format
     with open(os.path.join(outdir, filename), "w") as f:
         f.write(str(vectortile.Tile.fromdata(data, {})))
+
+    with open(os.path.join(outdir, filename+'-raw'), "w") as f:
+        f.write(str(data))
 
 def generate_info(outdir, series_group):
     """Generate a vessel information file which contains information about a
@@ -180,6 +194,8 @@ def generate_tileset(outdir, levels, start, extent, extent_count, point_count):
 
     def generate_tiles(bounds, level=0):
         print("Generating tiles for bounds %s at zoom level %s" % (bounds, level))
+        bbox = bounds.get_bbox()
+        print("Tile bounds: %s - %s | %s - %s" % (bbox.latmin, bbox.latmax, bbox.lonmin, bbox.lonmax))
         series_group = series_generator.new_series_group();
         sub_outdir = os.path.join(outdir, "sub", "seriesgroup=%s" % series_group)
         ensure_dir(sub_outdir)
